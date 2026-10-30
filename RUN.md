@@ -55,13 +55,57 @@ working on the transcript fallback until you restart them.
 To remove: `npm run uninstall-hooks` (removes only the Mission Control entries, backs up
 first).
 
+## Lanes (what each one means)
+
+| Lane | Internal key | Meaning |
+|---|---|---|
+| **Waiting on you** | `waiting` | needs an answer or a permission approval. From a hook (permission prompt / idle notification) plus a read of the last message |
+| **Working** | `working` | the agent is running (`claude agents` says busy) |
+| **Finished** | `done` | turn complete · window still open. The agent reported and stopped; nothing was asked of you |
+| **Closed** | `ended` | terminal closed · resume anytime. No process attached; the transcript is on disk and Resume continues it |
+| **Archived** | — | off the Active tab (manual, or auto after 7 idle/closed days). Reopen anytime |
+
+The UI labels are Finished/Closed; the API, `meta.json`, `rules.json` and tests keep `done`/`ended`.
+
+### Drag a card to fix the board
+
+Drag any card onto another lane header (or onto the **Archived** tab), or use **Move ▾** on
+the card. The card is pinned there and shows a `moved by you ✕` chip (✕ = back to automatic).
+The pin lasts until that session takes its next turn, then automatic status resumes.
+Working and Closed are display-only pins: a dead process is never shown as Working and a
+live one never as Closed.
+
+### The board learns from your moves
+
+Every move between **Waiting on you** and **Finished** is a correction. It is appended to
+`~/.mission-control/corrections.jsonl` with the message that was judged. After every 3 new
+corrections (or on **Rules → Learn now**, or `npm run learn`) a headless Claude call reads
+the current phrase lists plus the new corrections and returns updated lists. The exact call:
+
+```bash
+printf '%s' "$PROMPT" | claude -p --output-format json --no-session-persistence --tools ""
+```
+
+(run with the `CLAUDECODE` / `CLAUDE_CODE_*` env vars stripped so it works from inside a
+Claude session; about 25 s; no tools, no saved transcript.) The reply is validated (arrays
+of lowercase 2-6 word phrases, max 60 each) before anything is written; invalid output is
+logged as "skipped" and the rules are untouched. Every write first backs up
+`~/.mission-control/rules.json` to `rules.json.bak-<ts>`; **Rules → Revert last learning**
+restores it. Applied changes and their reasons land in `~/.mission-control/learning-log.jsonl`
+and show in the Rules popover.
+
+What the rules are: fixed base rules (message ends with `?` → waiting; `?` in the last
+paragraph → waiting) plus two tunable phrase lists matched against the last paragraph of the
+final message: `askPhrases` (→ waiting) and `reportPhrases` (→ finished, even with a `?`
+inside the paragraph). Edit them by hand in the Rules popover or in `rules.json`.
+
 ## Actions on a card
 
 - **Focus window**: finds the terminal tab that owns the session (pid → tty → Terminal.app
   or iTerm2) and brings it to the front. It never opens a second window for a live session.
-- **Resume in Terminal** (shown when no process is attached): opens one new Terminal window
+- **Resume** (shown on Closed cards): opens one new Terminal window
   with `claude --resume <id>` in the session's folder.
-- **Rename**, **Archive** / **Reopen**.
+- **Rename**, **Archive** / **Reopen**, **Move ▾** (see Lanes).
 - **+ New session**: folder, name, first prompt → one new Terminal window running `claude`
   there with that prompt. The name is attached to the new session id.
 

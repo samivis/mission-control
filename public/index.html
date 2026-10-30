@@ -114,6 +114,32 @@
   .err{color:var(--danger); font-size:12.5px; margin-right:auto;}
   .toast{position:fixed; left:50%; bottom:24px; transform:translateX(-50%); background:var(--fg); color:var(--bg); font-size:13px; padding:9px 14px; border-radius:10px; box-shadow:var(--shadow-lg); z-index:50; opacity:0; transition:opacity .2s; pointer-events:none;}
   .toast.on{opacity:1}
+  /* lanes: drag targets + subtitles */
+  .sec-h .subt{font-family:var(--mono); font-size:11px; color:var(--faint); font-weight:400; text-transform:none; letter-spacing:0; margin-left:2px;}
+  .sec.droptarget .grid{outline:2px dashed color-mix(in srgb,var(--accent) 55%, transparent); outline-offset:6px; border-radius:14px; background:color-mix(in srgb,var(--accent) 5%, transparent);}
+  .tab.droptarget{color:var(--accent); border-bottom-color:var(--accent); background:color-mix(in srgb,var(--accent) 8%, transparent); border-radius:6px 6px 0 0;}
+  .card[draggable="true"]{cursor:grab;} .card.dragging{opacity:.45; transform:scale(.98);}
+  .cardbtns{position:absolute; top:11px; right:11px; display:flex; gap:5px; opacity:0; transition:opacity .12s;}
+  .card:hover .cardbtns, .card:focus-within .cardbtns{opacity:1;}
+  .cardbtns .cardx{position:static; opacity:1;}
+  .movemenu{position:absolute; z-index:30; background:var(--surface); border:1px solid var(--border); border-radius:10px; box-shadow:var(--shadow-lg); padding:5px; min-width:170px; display:none; flex-direction:column;}
+  .movemenu.on{display:flex;}
+  .movemenu button{background:none; border:none; text-align:left; font-size:13px; color:var(--fg); padding:7px 10px; border-radius:7px; display:flex; align-items:center; gap:8px;}
+  .movemenu button:hover{background:var(--surface-2);} .movemenu .mm-h{font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:var(--faint); padding:4px 10px 2px;}
+  .moved{display:inline-flex; align-items:center; gap:5px; font-family:var(--mono); font-size:10.5px; color:var(--accent); background:color-mix(in srgb,var(--accent) 10%, transparent); border-radius:6px; padding:2px 7px;}
+  .moved button{background:none; border:none; color:inherit; font-size:12px; padding:0 1px; line-height:1; opacity:.8;} .moved button:hover{opacity:1;}
+  /* rules popover */
+  .pop{position:fixed; top:64px; right:16px; width:min(440px, calc(100% - 32px)); max-height:calc(100vh - 90px); overflow:auto; background:var(--surface); border:1px solid var(--border); border-radius:14px; box-shadow:var(--shadow-lg); z-index:45; padding:16px; display:none;}
+  .pop.on{display:block;}
+  .pop h3{font-size:15px; margin-bottom:2px;} .pop p{color:var(--muted); font-size:12.5px; margin:0 0 12px;}
+  .pop textarea{font-family:var(--mono); font-size:12px; min-height:92px;}
+  .pop .llog{display:flex; flex-direction:column; gap:6px; margin:6px 0 12px;}
+  .pop .lrow{font-size:12.5px; padding:7px 9px; border:1px solid var(--border); border-radius:8px; background:var(--surface-2);}
+  .pop .lrow .lk{font-family:var(--mono); font-size:11px; color:var(--muted);}
+  .pop .lrow .why{color:var(--muted); font-size:12px; margin-top:2px;}
+  .pop .lrow.skip{color:var(--waiting);}
+  .pop .popactions{display:flex; gap:8px; align-items:center; flex-wrap:wrap;}
+  .pop .hint{font-family:var(--mono); font-size:11px; color:var(--faint); margin-left:auto;}
 </style>
 </head>
 <body>
@@ -123,6 +149,7 @@
       <div class="glyph">✸</div>
       <div><h1>Mission Control</h1><div class="sub" id="subcount">loading…</div></div>
     </div>
+    <button class="btn" id="rulesbtn" aria-haspopup="dialog" aria-expanded="false">Rules</button>
     <button class="btn" id="themebtn" aria-label="Toggle theme">◐</button>
     <button class="btn btn-primary" id="newbtn">+ New session</button>
   </div>
@@ -164,11 +191,24 @@
   <div class="field"><label for="m-prompt">First prompt</label><textarea id="m-prompt" placeholder="What should it start on? (optional)"></textarea></div>
   <div class="mactions"><span class="err" id="m-err"></span><button class="btn" id="m-cancel">Cancel</button><button class="btn btn-primary" id="m-start">Start session</button></div>
 </div>
+<div class="movemenu" id="movemenu" role="menu"></div>
+
+<div class="pop" id="pop" role="dialog" aria-label="Lane rules">
+  <h3>Lane rules</h3>
+  <p>Drag a card to another lane to correct the board. After every <span id="r-every">3</span> corrections the rules below are re-tuned by Claude; you can also edit them here. One phrase per line, matched against the last paragraph of the session's final message.</p>
+  <div class="field"><label for="r-ask">Phrases that mean “waiting on you”</label><textarea id="r-ask"></textarea></div>
+  <div class="field"><label for="r-report">Phrases that mean “finished, nothing needed” (win over a “?” inside the paragraph)</label><textarea id="r-report"></textarea></div>
+  <div class="popactions"><span class="err" id="r-err"></span><button class="btn btn-primary" id="r-save">Save rules</button><button class="btn" id="r-learn">Learn now</button><button class="btn" id="r-revert">Revert last learning</button></div>
+  <div class="field" style="margin-top:14px"><label>Recent learning</label><div class="llog" id="r-log"><div class="lrow lk">No learning runs yet.</div></div><span class="hint" id="r-pending"></span></div>
+</div>
 <div class="toast" id="toast"></div>
 
 <script>
 (function(){
-  var LABELS = {waiting:"Waiting on you", working:"Working", done:"Done", ended:"Ended"};
+  var LABELS = {waiting:"Waiting on you", working:"Working", done:"Finished", ended:"Closed"};
+  var SUBT = {waiting:"needs an answer or approval", working:"agent is running", done:"turn complete · window still open", ended:"terminal closed · resume anytime"};
+  var LANE_ORDER = ["waiting","working","done","ended"];
+  var lastLearnAt = null;
   var COLORS = {waiting:"var(--waiting)", working:"var(--working)", done:"var(--done)", ended:"var(--faint)"};
   var state = {active:[], archived:[], recentCwds:[], config:{}};
   var view = "active", current = null, drawerOpen = false;
@@ -190,12 +230,13 @@
   function cardHTML(s){
     var pulse = s.status==="working" ? " pulse" : "";
     var win = s.windows>1 ? '<span class="chip warn">'+s.windows+' windows</span>' : "";
-    return '<div class="card '+(s.status==="waiting"?"waiting":"")+'" data-id="'+esc(s.id)+'" tabindex="0" role="button">'
-      + '<span class="cardx" data-arch="'+esc(s.id)+'" role="button" tabindex="0" aria-label="Archive session">Archive</span>'
+    var moved = s.overridden ? '<span class="moved" title="You moved this card here. It goes back to automatic when the session takes its next turn.">moved by you <button data-undo="'+esc(s.id)+'" aria-label="Undo move">✕</button></span>' : "";
+    return '<div class="card '+(s.status==="waiting"?"waiting":"")+'" data-id="'+esc(s.id)+'" draggable="true" tabindex="0" role="button">'
+      + '<span class="cardbtns"><span class="cardx" data-move="'+esc(s.id)+'" role="button" tabindex="0" aria-haspopup="menu" aria-label="Move to another lane">Move ▾</span><span class="cardx" data-arch="'+esc(s.id)+'" role="button" tabindex="0" aria-label="Archive session">Archive</span></span>'
       + '<span class="status s-'+s.status+'"><span class="sdot'+pulse+'"></span>'+(s.reason||LABELS[s.status])+'</span>'
       + '<span class="name">'+esc(s.name)+'</span>'
       + '<span class="last">'+esc(s.last||"—")+'</span>'
-      + '<span class="meta"><span class="chip">'+esc(s.dir)+'</span>'+win+'<span class="ago">'+ago(s.lastActivity)+'</span></span>'
+      + '<span class="meta"><span class="chip">'+esc(s.dir)+'</span>'+win+moved+'<span class="ago">'+ago(s.lastActivity)+'</span></span>'
       + '</div>';
   }
 
@@ -208,8 +249,8 @@
       state.active.forEach(function(s){ (groups[s.status]||groups.done).push(s); });
       ["waiting","working","done","ended"].forEach(function(st){
         var arr = groups[st];
-        if(!arr.length && st!=="working") return;
-        html += '<section class="sec"><div class="sec-h"><span class="dotsec" style="background:'+COLORS[st]+'"></span><h2>'+LABELS[st]+'</h2><span class="count">'+arr.length+'</span></div><div class="grid">';
+        if(!arr.length && st!=="working" && !dragging) return;
+        html += '<section class="sec" data-lane="'+st+'"><div class="sec-h"><span class="dotsec" style="background:'+COLORS[st]+'"></span><h2>'+LABELS[st]+'</h2><span class="count">'+arr.length+'</span><span class="subt">· '+SUBT[st]+'</span></div><div class="grid">';
         html += arr.map(cardHTML).join("");
         if(st==="working") html += '<button class="card newcard" id="newcard2">+ Start a session here</button>';
         html += '</div></section>';
@@ -240,10 +281,103 @@
     document.querySelectorAll('.cardx[data-arch]').forEach(function(el){ el.addEventListener('click', function(e){ e.stopPropagation(); archive(el.getAttribute('data-arch'), true); }); });
     document.querySelectorAll('[data-reopen]').forEach(function(el){ el.addEventListener('click', function(e){ e.stopPropagation(); archive(el.getAttribute('data-reopen'), false); }); });
     var nc = $('newcard2'); if(nc) nc.addEventListener('click', openModal);
+    document.querySelectorAll('.cardx[data-move]').forEach(function(el){
+      var open = function(e){ e.stopPropagation(); e.preventDefault(); openMoveMenu(el.getAttribute('data-move'), el); };
+      el.addEventListener('click', open);
+      el.addEventListener('keydown', function(e){ if(e.key==="Enter"||e.key===" ") open(e); });
+    });
+    document.querySelectorAll('[data-undo]').forEach(function(el){ el.addEventListener('click', function(e){ e.stopPropagation(); moveTo(el.getAttribute('data-undo'), null); }); });
+    document.querySelectorAll('.card[draggable]').forEach(function(el){
+      el.addEventListener('dragstart', function(e){ dragging = el.getAttribute('data-id'); el.classList.add('dragging'); e.dataTransfer.effectAllowed='move'; try{ e.dataTransfer.setData('text/plain', dragging); }catch(x){} render(); });
+      el.addEventListener('dragend', function(){ dragging = null; document.querySelectorAll('.droptarget').forEach(function(d){ d.classList.remove('droptarget'); }); render(); });
+    });
+    document.querySelectorAll('.sec[data-lane]').forEach(function(sec){
+      sec.addEventListener('dragover', function(e){ if(!dragging) return; e.preventDefault(); e.dataTransfer.dropEffect='move'; sec.classList.add('droptarget'); });
+      sec.addEventListener('dragleave', function(e){ if(!sec.contains(e.relatedTarget)) sec.classList.remove('droptarget'); });
+      sec.addEventListener('drop', function(e){ e.preventDefault(); var id = dragging || e.dataTransfer.getData('text/plain'); sec.classList.remove('droptarget'); var lane = sec.getAttribute('data-lane'); var cur = find(id); dragging = null; if(cur && cur.status===lane){ render(); return; } moveTo(id, lane); });
+    });
+  }
+  var dragging = null;
+  function moveTo(id, lane){
+    api('POST','/api/sessions/'+encodeURIComponent(id)+'/lane',{lane:lane}).then(function(r){
+      if(lane===null) toast('Back to automatic');
+      else if(lane==='archived') toast('Archived');
+      else toast('Moved to '+LABELS[lane]+(r.logged?' · noted for the rules':''));
+      if(lane==='archived' && current && current.id===id) closeDrawer();
+      return load();
+    }).catch(function(e){ toast(e.message); load(); });
+  }
+  function openMoveMenu(id, anchor){
+    var s = find(id); if(!s) return;
+    var m = $('movemenu');
+    m.innerHTML = '<div class="mm-h">Move to</div>' + LANE_ORDER.filter(function(l){ return l!==s.status; }).map(function(l){
+      return '<button data-lane="'+l+'"><span class="dotsec" style="background:'+COLORS[l]+'"></span>'+LABELS[l]+'</button>';
+    }).join('') + '<button data-lane="archived"><span class="dotsec" style="background:var(--faint)"></span>Archived</button>' + (s.overridden ? '<button data-lane="auto">↺ Back to automatic</button>' : '');
+    var r = anchor.getBoundingClientRect();
+    m.style.left = Math.min(r.left, window.innerWidth-190)+'px'; m.style.top = (r.bottom+6+window.scrollY)+'px';
+    m.classList.add('on');
+    m.querySelectorAll('button').forEach(function(b){ b.addEventListener('click', function(e){ e.stopPropagation(); closeMoveMenu(); var l=b.getAttribute('data-lane'); moveTo(id, l==='auto'?null:l); }); });
+    var first = m.querySelector('button'); if(first) first.focus();
+  }
+  function closeMoveMenu(){ $('movemenu').classList.remove('on'); }
+  document.addEventListener('click', function(e){ if(!$('movemenu').contains(e.target)) closeMoveMenu(); if(!$('pop').contains(e.target) && e.target!==$('rulesbtn')) closePop(); });
+
+  // archived tab as a drop target
+  (function(){
+    var tab = $('tab-archived');
+    tab.addEventListener('dragover', function(e){ if(!dragging) return; e.preventDefault(); tab.classList.add('droptarget'); });
+    tab.addEventListener('dragleave', function(){ tab.classList.remove('droptarget'); });
+    tab.addEventListener('drop', function(e){ e.preventDefault(); tab.classList.remove('droptarget'); var id = dragging || e.dataTransfer.getData('text/plain'); dragging=null; if(id) moveTo(id, 'archived'); });
+  })();
+
+  // rules popover
+  function openPop(){
+    api('GET','/api/rules').then(function(r){
+      $('r-ask').value = (r.rules.askPhrases||[]).join('\n');
+      $('r-report').value = (r.rules.reportPhrases||[]).join('\n');
+      paintLog(r.log||[]); $('r-revert').disabled = !(r.backups>0); $('r-err').textContent='';
+      $('r-pending').textContent = (state.learning && state.learning.pending) ? state.learning.pending+' correction(s) waiting for the next learning run' : '';
+      $('r-every').textContent = (state.learning && state.learning.every) || 3;
+      $('pop').classList.add('on'); $('rulesbtn').setAttribute('aria-expanded','true');
+    }).catch(function(e){ toast(e.message); });
+  }
+  function closePop(){ $('pop').classList.remove('on'); $('rulesbtn').setAttribute('aria-expanded','false'); }
+  function paintLog(log){
+    var el = $('r-log');
+    if(!log.length){ el.innerHTML = '<div class="lrow lk">No learning runs yet.</div>'; return; }
+    el.innerHTML = log.map(function(e){
+      var when = new Date(e.ts).toLocaleString();
+      if(e.skipped) return '<div class="lrow skip"><span class="lk">'+esc(when)+'</span> · skipped: '+esc(e.error||'')+'</div>';
+      if(!e.changes || !e.changes.length) return '<div class="lrow"><span class="lk">'+esc(when)+'</span> · '+e.corrections+' correction(s) reviewed, no change</div>';
+      return '<div class="lrow"><span class="lk">'+esc(when)+' · '+e.corrections+' correction(s)</span>' + e.changes.map(function(c){
+        return '<div>'+(c.op==='add'?'+ ':'− ')+'<b>'+esc(c.phrase)+'</b> <span class="lk">'+(c.list==='askPhrases'?'waiting':'finished')+'</span>'+(c.why?'<div class="why">'+esc(c.why)+'</div>':'')+'</div>';
+      }).join('') + '</div>';
+    }).join('');
+  }
+  $('rulesbtn').addEventListener('click', function(e){ e.stopPropagation(); if($('pop').classList.contains('on')) closePop(); else openPop(); });
+  $('r-save').addEventListener('click', function(){
+    var lines = function(id){ return $(id).value.split('\n').map(function(x){ return x.trim(); }).filter(Boolean); };
+    $('r-err').textContent='';
+    api('PUT','/api/rules',{askPhrases:lines('r-ask'), reportPhrases:lines('r-report')}).then(function(){ toast('Rules saved'); load(); openPop(); }).catch(function(e){ $('r-err').textContent=e.message; });
+  });
+  $('r-learn').addEventListener('click', function(){
+    var b=$('r-learn'); b.disabled=true; b.textContent='Learning…';
+    api('POST','/api/rules/learn').then(function(r){ toast(r.ran ? 'Rules updated ('+r.changes.length+' change'+(r.changes.length===1?'':'s')+')' : r.reason); lastLearnAt = Date.now(); load(); openPop(); }).catch(function(e){ toast(e.message); }).then(function(){ b.disabled=false; b.textContent='Learn now'; });
+  });
+  $('r-revert').addEventListener('click', function(){
+    api('POST','/api/rules/revert').then(function(){ toast('Rules reverted'); load(); openPop(); }).catch(function(e){ toast(e.message); });
+  });
+  function noteLearning(l){
+    if(!l || !l.lastRunAt) return;
+    if(lastLearnAt===null){ lastLearnAt = l.lastRunAt; return; }
+    if(l.lastRunAt > lastLearnAt){
+      lastLearnAt = l.lastRunAt; var r = l.lastResult || {};
+      toast(r.ran ? 'Rules updated ('+(r.changes||[]).length+' change'+((r.changes||[]).length===1?'':'s')+') · see Rules' : (r.reason||'Learning ran'));
+    }
   }
 
   function load(){
-    return api('GET','/api/board').then(function(b){ state = b; render(); }).catch(function(e){ $('subcount').textContent = 'offline: '+e.message; });
+    return api('GET','/api/board').then(function(b){ state = b; render(); noteLearning(b.learning); }).catch(function(e){ $('subcount').textContent = 'offline: '+e.message; });
   }
   function archive(id, on){
     api('POST','/api/sessions/'+encodeURIComponent(id)+(on?'/archive':'/unarchive')).then(function(){ toast(on?'Archived':'Back on the board'); if(on && current && current.id===id) closeDrawer(); return load(); }).catch(function(e){ toast(e.message); });
@@ -256,7 +390,7 @@
     st.querySelector('.sdot').className = "sdot"+(s.status==="working"?" pulse":"");
     st.querySelector('span:last-child').textContent = s.reason || LABELS[s.status];
     $('d-name').textContent = s.name;
-    $('d-focus').textContent = s.live ? "Focus window" : "Resume in Terminal";
+    $('d-focus').textContent = s.live ? "Focus window" : "Resume";
     $('d-archive').textContent = s.archived ? "Reopen" : "Archive";
     $('d-note').textContent = s.live ? (s.windows>1 ? s.windows+" windows attached" : "") : "";
   }
@@ -321,7 +455,7 @@
     r.setAttribute('data-theme', dark?"light":"dark"); try{ localStorage.setItem('mc-theme', dark?"light":"dark"); }catch(e){}
   });
   try{ var t=localStorage.getItem('mc-theme'); if(t) document.documentElement.setAttribute('data-theme', t); }catch(e){}
-  document.addEventListener('keydown', function(e){ if(e.key==="Escape"){ closeDrawer(); closeModal(); } });
+  document.addEventListener('keydown', function(e){ if(e.key==="Escape"){ closeDrawer(); closeModal(); closeMoveMenu(); closePop(); } });
 
   load(); setInterval(load, 4000);
 })();

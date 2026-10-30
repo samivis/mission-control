@@ -7,7 +7,9 @@ import { readConfig, MC_DIR, EVENTS_FILE } from './lib/paths.js';
 import { fetchAgents, groupAgents } from './lib/agents.js';
 import { indexTranscripts, loadFullTranscript } from './lib/transcripts.js';
 import { loadEvents } from './lib/events.js';
-import { loadMeta, saveMeta, setArchived, setName } from './lib/meta.js';
+import { loadMeta, saveMeta, setArchived, setName, setLane, clearLane } from './lib/meta.js';
+import { loadRules, saveRules, revertLastRules, listRuleBackups, appendCorrection, readLearningLog, unprocessedCorrections } from './lib/rules.js';
+import { makeAutoLearner, LEARN_EVERY } from './lib/learn.js';
 import { buildBoard } from './lib/classify.js';
 import { focusSession, resumeInTerminal, startInTerminal } from './lib/terminal.js';
 
@@ -15,6 +17,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(__dirname, 'public');
 const config = readConfig();
 const PORT = Number(process.env.PORT || config.port);
+const learner = makeAutoLearner();
 
 // ---- state: agents poll + cached board ----
 let agents = new Map();
@@ -32,15 +35,17 @@ function board() {
   const transcripts = indexTranscripts();
   const events = loadEvents();
   const meta = loadMeta();
+  const rules = loadRules();
   let dirty = false;
   const result = buildBoard({
-    now: Date.now(), agents, transcripts, events, meta,
+    now: Date.now(), agents, transcripts, events, meta, rules,
     autoArchiveDays: config.autoArchiveDays,
     onAutoArchive: (id, reason) => { setArchived(meta, id, true, reason); dirty = true; },
   });
   if (dirty) saveMeta(meta);
   const recentCwds = [...new Set([...result.active, ...result.archived].map((i) => i.cwd).filter(Boolean))].slice(0, 12);
-  return { ...result, recentCwds, agentsUpdatedAt, config: { autoArchiveDays: config.autoArchiveDays, skipPermissions: config.skipPermissions } };
+  const learning = { lastRunAt: learner.state.lastRunAt, lastResult: learner.state.lastResult, pending: unprocessedCorrections(rules).length, every: LEARN_EVERY };
+  return { ...result, recentCwds, agentsUpdatedAt, learning, config: { autoArchiveDays: config.autoArchiveDays, skipPermissions: config.skipPermissions } };
 }
 
 function findItem(id) {
@@ -76,6 +81,24 @@ const server = http.createServer(async (req, res) => {
           if (action === 'archive') { saveMeta(setArchived(meta, id, true)); return json(res, 200, { ok: true }); }
           if (action === 'unarchive') { saveMeta(setArchived(meta, id, false)); return json(res, 200, { ok: true }); }
           if (action === 'rename') { saveMeta(setName(meta, id, body.name)); return json(res, 200, { ok: true }); }
+          if (action === 'lane') {
+            const item = findItem(id);
+            if (!item) return json(res, 404, { error: 'Session not found.' });
+            const lane = body.lane;
+            if (lane === null || lane === undefined || lane === 'auto') { saveMeta(clearLane(meta, id)); return json(res, 200, { ok: true, cleared: true }); }
+            if (lane === 'archived') { saveMeta(setArchived(meta, id, true)); return json(res, 200, { ok: true, archived: true }); }
+            const from = item.autoStatus;
+            saveMeta(setLane(meta, id, lane, item.turnKey));
+            let logged = false;
+            const judged = new Set(['waiting', 'done']);
+            if (from !== lane && judged.has(from) && judged.has(lane)) {
+              const t = indexTranscripts().get(id);
+              appendCorrection({ sessionId: id, from, to: lane, reason: item.reason || '', lastText: t?.lastText || '' });
+              logged = true;
+              learner.poke();
+            }
+            return json(res, 200, { ok: true, from, to: lane, logged });
+          }
           if (action === 'focus') {
             await pollAgents();
             const item = findItem(id);
@@ -99,6 +122,23 @@ const server = http.createServer(async (req, res) => {
         meta[sessionId] = { ...(meta[sessionId] || {}), name: (body.name || '').trim() || undefined, cwd, createdAt: Date.now() };
         saveMeta(meta);
         return json(res, 200, { ok: true, sessionId });
+      }
+      if (parts[1] === 'rules' && !parts[2]) {
+        if (req.method === 'GET') return json(res, 200, { rules: loadRules(), log: readLearningLog(10), backups: listRuleBackups().length, learning: learner.state });
+        if (req.method === 'PUT') {
+          const body = await readBody(req);
+          try { return json(res, 200, { ok: true, rules: saveRules({ ...loadRules(), ...body }) }); }
+          catch (e) { return json(res, e.status || 500, { error: e.message }); }
+        }
+      }
+      if (req.method === 'POST' && parts[1] === 'rules' && parts[2] === 'learn') {
+        const r = await learner.runNow();
+        return json(res, 200, r);
+      }
+      if (req.method === 'POST' && parts[1] === 'rules' && parts[2] === 'revert') {
+        const r = revertLastRules();
+        if (!r) return json(res, 409, { error: 'No earlier rules to go back to.' });
+        return json(res, 200, { ok: true, rules: r });
       }
       if (req.method === 'GET' && parts[1] === 'health') return json(res, 200, { ok: true, mcDir: MC_DIR, eventsFile: EVENTS_FILE, eventsExists: fs.existsSync(EVENTS_FILE), liveSessions: agents.size });
       return json(res, 404, { error: 'not found' });
