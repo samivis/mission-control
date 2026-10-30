@@ -79,3 +79,13 @@ test('a session started with a slash command is named after the command', () => 
   const recs = [user('<command-message>context-restore</command-message>\n<command-name>/context-restore</command-name>')];
   assert.equal(firstPrompt(recs), '/context-restore');
 });
+
+test('asksForInput: asks without a trailing question mark count as waiting; reports do not', async () => {
+  const { asksForInput } = await import('../lib/transcripts.js');
+  assert.equal(asksForInput('Refresh the page and the card should be there. If it is not there, tell me what you see and I will dig in.'), true);
+  assert.equal(asksForInput('Two options here.\n\nWhich one do you want?'), true);
+  assert.equal(asksForInput('Should I proceed with the rebuild, or leave it.'), true);
+  assert.equal(asksForInput('Done. 17 tests pass and the server is running on port 3011.'), false);
+  assert.equal(asksForInput('Earlier I asked a question?\n\nAnyway, all shipped and verified.'), false);
+  assert.equal(asksForInput(''), false);
+});
