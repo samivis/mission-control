@@ -1,0 +1,14 @@
+{
+  "name": "mission-control",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local board for all running Claude Code sessions",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/*.test.js",
+    "install-hooks": "node scripts/install-hooks.js",
+    "uninstall-hooks": "node scripts/install-hooks.js --uninstall"
+  }
+}
