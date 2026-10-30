@@ -4,6 +4,7 @@
 #   npm run uninstall-service    stop + remove both agents
 # Server agent:  ai.mission-control.server  (RunAtLoad + KeepAlive; restarts if it dies)
 # Window agent:  ai.mission-control.window  (RunAtLoad; waits for the server, then opens the board once)
+# Both run with HOME as their working directory: launchd jobs are not always allowed into ~/Desktop or ~/Documents.
 set -e
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 NODE="$(command -v node || true)"
@@ -30,6 +31,9 @@ fi
 [ "$(uname -s)" = "Darwin" ] || { echo "launchd setup is macOS-only."; exit 1; }
 [ -n "$NODE" ] || { echo "node not found on PATH"; exit 1; }
 mkdir -p "$AGENTS" "$MC_DIR"
+# launchd jobs are often denied access to ~/Desktop and ~/Documents (macOS privacy protection),
+# so the window agent runs a copy of open.sh from the data dir instead of the repo.
+cp "$REPO/scripts/open.sh" "$MC_DIR/open.sh" && chmod +x "$MC_DIR/open.sh"
 
 # A plain `npm start` from a terminal would fight the agent for the port. Stop it first.
 for PID in $(lsof -tiTCP:"$PORT" -sTCP:LISTEN 2>/dev/null); do kill "$PID" 2>/dev/null || true; done
@@ -44,7 +48,7 @@ cat > "$SERVER_PLIST" <<PLIST
     <string>$NODE</string>
     <string>$REPO/server.js</string>
   </array>
-  <key>WorkingDirectory</key><string>$REPO</string>
+  <key>WorkingDirectory</key><string>$HOME</string>
   <key>EnvironmentVariables</key><dict>
     <key>PORT</key><string>$PORT</string>
     <key>PATH</key><string>$(dirname "$NODE"):$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
@@ -66,9 +70,9 @@ cat > "$WINDOW_PLIST" <<PLIST
   <key>ProgramArguments</key><array>
     <string>/bin/sh</string>
     <string>-c</string>
-    <string>for i in \$(seq 1 60); do curl -sf http://localhost:$PORT/api/board >/dev/null \&amp;\&amp; break; sleep 1; done; exec sh "$REPO/scripts/open.sh"</string>
+    <string>for i in \$(seq 1 60); do curl -sf http://localhost:$PORT/api/board >/dev/null &amp;&amp; break; sleep 1; done; exec sh "$MC_DIR/open.sh"</string>
   </array>
-  <key>WorkingDirectory</key><string>$REPO</string>
+  <key>WorkingDirectory</key><string>$HOME</string>
   <key>EnvironmentVariables</key><dict>
     <key>PORT</key><string>$PORT</string>
     <key>PATH</key><string>$(dirname "$NODE"):$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>

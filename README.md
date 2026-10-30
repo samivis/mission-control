@@ -12,9 +12,6 @@ Everything stays on your machine. No login, no cloud, no dependencies, no build 
 
 ## Demo
 
-<!-- LOOM_URL -->
-Watch the walkthrough: (link coming)
-
 To try the UI without any sessions of your own: `npm run demo` serves fixture data on the same port.
 
 ## Requirements
@@ -102,7 +99,7 @@ This installs two macOS launch agents:
 - `ai.mission-control.server` starts the server at login and restarts it if it ever dies.
 - `ai.mission-control.window` waits for the server at login, then opens the board once in a standalone window.
 
-Both use the `node` on your PATH at install time, so it works with nvm and similar. Logs go to `~/.mission-control/server.log`. The server idles at a few megabytes of memory and polls `claude agents --json` every three seconds, which you will not notice.
+Both use the `node` on your PATH at install time, so it works with nvm and similar. If the repo lives in `~/Desktop` or `~/Documents`, macOS may ask once to allow access for `node`, since launch agents are not given those folders by default. Logs go to `~/.mission-control/server.log`. The server idles at a few megabytes of memory and polls `claude agents --json` every three seconds, which you will not notice.
 
 ```bash
 npm run uninstall-service    # stop both agents and remove them
