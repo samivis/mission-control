@@ -12,11 +12,14 @@ import { loadRules, saveRules, revertLastRules, listRuleBackups, appendCorrectio
 import { makeAutoLearner, LEARN_EVERY } from './lib/learn.js';
 import { buildBoard } from './lib/classify.js';
 import { focusSession, resumeInTerminal, startInTerminal } from './lib/terminal.js';
+import { demoBoard, demoTranscript } from './lib/demo.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(__dirname, 'public');
 const config = readConfig();
 const PORT = Number(process.env.PORT || config.port);
+// MC_DEMO=1 serves fixture sessions (for screenshots and trying the UI without Claude Code data).
+const DEMO = process.env.MC_DEMO === '1';
 const learner = makeAutoLearner();
 
 // ---- state: agents poll + cached board ----
@@ -32,6 +35,7 @@ setInterval(pollAgents, config.pollMs).unref();
 await pollAgents();
 
 function board() {
+  if (DEMO) return demoBoard();
   const transcripts = indexTranscripts();
   const events = loadEvents();
   const meta = loadMeta();
@@ -71,6 +75,7 @@ const server = http.createServer(async (req, res) => {
         const action = parts[3];
         if (req.method === 'GET' && action === 'transcript') {
           const item = findItem(id);
+          if (DEMO) return json(res, 200, { item, transcript: demoTranscript(id) });
           const t = indexTranscripts().get(id);
           if (!t) return json(res, 200, { item, transcript: [] });
           return json(res, 200, { item, transcript: loadFullTranscript(t.path) });

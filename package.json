@@ -1,15 +1,24 @@
 {
   "name": "mission-control",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
-  "description": "Local board for all running Claude Code sessions",
+  "description": "A local mission control board for your Claude Code sessions: who needs you, who is working, who is finished.",
+  "author": "Samidha Visai",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/samivis/mission-control.git" },
+  "homepage": "https://github.com/samivis/mission-control#readme",
+  "bugs": { "url": "https://github.com/samivis/mission-control/issues" },
+  "keywords": ["claude-code", "claude", "agents", "dashboard", "macos", "developer-tools"],
   "engines": { "node": ">=22" },
   "scripts": {
     "start": "node server.js",
+    "demo": "MC_DEMO=1 node server.js",
+    "open": "sh scripts/open.sh",
     "test": "node --test test/*.test.js",
     "learn": "node scripts/learn.js",
     "install-hooks": "node scripts/install-hooks.js",
-    "uninstall-hooks": "node scripts/install-hooks.js --uninstall"
+    "uninstall-hooks": "node scripts/install-hooks.js --uninstall",
+    "install-service": "sh scripts/install-service.sh",
+    "uninstall-service": "sh scripts/install-service.sh --uninstall"
   }
 }
